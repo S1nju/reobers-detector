@@ -5,11 +5,6 @@ import keras
 import serial
 import time
 
-# ---------------------- Arduino Serial ----------------------
-# Replace COM4 with your Arduino COM port
-arduino = serial.Serial('COM4', 9600, timeout=1)
-time.sleep(2)  # wait for Arduino connection
-# ------------------------------------------------------------
 
 model = keras.models.load_model('model2.keras', compile=False)
 classes = ['normal', 'bad driver', 'rober']
@@ -26,49 +21,53 @@ if not cap.isOpened():
 
 # ---------------------- Matplotlib Live Plot ----------------------
 plt.ion()
-fig, ax = plt.subplots()
-bar_plot = ax.bar(classes, [0, 0, 0])
-ax.set_ylim([0, 1])
-plt.title("Live Prediction Confidence")
+
+fig = plt.figure(figsize=(10, 5))
+
+# Left: Video display
+ax1 = fig.add_subplot(1, 2, 1)
+img_plot = ax1.imshow(np.zeros((480, 480, 3), dtype=np.uint8))
+ax1.axis('off')
+ax1.set_title("Live Video")
+
+# Right: Bar graph
+ax2 = fig.add_subplot(1, 2, 2)
+bar_plot = ax2.bar(classes, [0, 0, 0], color=['green', 'orange', 'red'])
+ax2.set_ylim([0, 1])
+ax2.set_title("Prediction Confidence")
 # -------------------------------------------------------------------
 
 while True:
     ret, frame = cap.read()
-    frame = cv.resize(frame, (128, 128))
+    if not ret:
+        print("Camera error")
+        break
 
-    frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-    frame_rgb = frame_rgb / 255.0
+    # Prediction input frame (128x128)
+    resized = cv.resize(frame, (128, 128))
+    resized_rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB) / 255.0
+    input_frame = np.expand_dims(resized_rgb, axis=0)
 
-    input_frame = np.expand_dims(frame_rgb, axis=0)
     result = model.predict(input_frame, verbose=0)
-
     predicted_class = classes[np.argmax(result)]
 
-    # ---------------------- SEND TO ARDUINO ----------------------
-    arduino.write(predicted_class.encode() + b"\n")  # send class name
-    # --------------------------------------------------------------
-
+    # Draw face box on actual frame
     gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
     faces = faceCascade.detectMultiScale(gray, 1.1, 4)
     for (x, y, w, h) in faces:
         cv.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
-    cv.putText(frame, predicted_class, (10, 20), cv.FONT_HERSHEY_SIMPLEX,
-               0.6, (0, 0, 255), 2)
+    cv.putText(frame, predicted_class, (10, 25),
+               cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-    frame = cv.resize(frame, (480, 480))
-    cv.imshow('video', frame)
+    # Convert for matplotlib
+    frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
 
-    # ---------------------- UPDATE MATPLOTLIB ----------------------
-    for i, b in enumerate(bar_plot):
-        b.set_height(result[0][i])
-    fig.canvas.draw()
-    fig.canvas.flush_events()
-    # --------------------------------------------------------------
+    # ✅ Update frame without resizing window
+    img_plot.set_data(frame_rgb)
 
-    if cv.waitKey(1) & 0xFF == ord('q'):
-        break
+    # ✅ Update prediction bars
+    for i, bar in enumerate(bar_plot):
+        bar.set_height(result[0][i])
 
-cap.release()
-arduino.close()
-cv.destroyAllWindows()
+    plt.pause(0.001)
