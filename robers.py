@@ -5,6 +5,13 @@ import keras
 import serial
 import time
 
+# ----------------- SERIAL TO ARDUINO -----------------
+# Change COM4 to whatever your Arduino shows in Device Manager
+arduino = serial.Serial('COM4', 9600)  
+time.sleep(2)  # allow Arduino reset
+print("✅ Connected to Arduino on", arduino.port)
+# -----------------------------------------------------
+
 
 model = keras.models.load_model('model2.keras', compile=False)
 classes = ['normal', 'bad driver', 'rober']
@@ -18,6 +25,7 @@ if not cap.isOpened():
     cap = cv.VideoCapture(0)
 if not cap.isOpened():
     raise IOError("Can't open webcam")
+
 
 # ---------------------- Matplotlib Live Plot ----------------------
 plt.ion()
@@ -51,6 +59,9 @@ while True:
     result = model.predict(input_frame, verbose=0)
     predicted_class = classes[np.argmax(result)]
 
+    # ➤ Send class name to Arduino
+    arduino.write((predicted_class + "\n").encode())  # <-- HERE
+
     # Draw face box on actual frame
     gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
     faces = faceCascade.detectMultiScale(gray, 1.1, 4)
@@ -63,10 +74,8 @@ while True:
     # Convert for matplotlib
     frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
 
-    # ✅ Update frame without resizing window
     img_plot.set_data(frame_rgb)
 
-    # ✅ Update prediction bars
     for i, bar in enumerate(bar_plot):
         bar.set_height(result[0][i])
 
